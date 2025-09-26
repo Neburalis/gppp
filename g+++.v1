@@ -1,0 +1,218 @@
+#!/bin/bash
+
+# g+++ — умный компилятор C++ с конфигом в текущей директории и поддержкой очистки
+
+CONFIG_FILE="./.g+++_config"
+
+UNAME_S=$(uname -s)
+
+# Определяем CXX
+CXX="g++"
+
+# Определяем флаги по ОС
+if [[ "$UNAME_S" == *"NT"* ]]; then
+    CXXFLAGS_OS="-Wshadow -Winit-self -Wredundant-decls -Wcast-align -Wundef -Wfloat-equal -Winline \
+        -Wunreachable-code -Wmissing-declarations -Wmissing-include-dirs -Wswitch-enum -Wswitch-default \
+        -Weffc++ -Wmain -Wextra -Wall -g -pipe -fexceptions -Wcast-qual -Wconversion -Wctor-dtor-privacy \
+        -Wempty-body -Wformat-security -Wformat=2 -Wignored-qualifiers -Wlogical-op \
+        -Wno-missing-field-initializers -Wnon-virtual-dtor -Woverloaded-virtual -Wpointer-arith -Wsign-promo \
+        -Wstack-usage=8192 -Wstrict-aliasing -Wstrict-null-sentinel -Wtype-limits -Wwrite-strings -Werror=vla \
+        -D_DEBUG -D_EJUDGE_CLIENT_SIDE"
+    CXXFLAGS_ARCH=""
+elif [[ "$UNAME_S" == "Linux" ]]; then
+    CXXFLAGS_OS="-D_DEBUG -ggdb3 -std=c++17 -O0 -Wall -Wextra -Weffc++ -Waggressive-loop-optimizations \
+        -Wc++14-compat -Wmissing-declarations -Wcast-align -Wcast-qual -Wchar-subscripts -Wconditionally-supported \
+        -Wconversion -Wctor-dtor-privacy -Wempty-body -Wfloat-equal -Wformat-nonliteral -Wformat-security \
+        -Wformat-signedness -Wformat=2 -Winline -Wlogical-op -Wnon-virtual-dtor -Wopenmp-simd -Woverloaded-virtual \
+        -Wpacked -Wpointer-arith -Winit-self -Wredundant-decls -Wshadow -Wsign-conversion -Wsign-promo \
+        -Wstrict-null-sentinel -Wstrict-overflow=2 -Wsuggest-attribute=noreturn -Wsuggest-final-methods \
+        -Wsuggest-final-types -Wsuggest-override -Wswitch-default -Wswitch-enum -Wsync-nand -Wundef \
+        -Wunreachable-code -Wunused -Wuseless-cast -Wvariadic-macros -Wno-literal-suffix -Wno-missing-field-initializers \
+        -Wno-narrowing -Wno-old-style-cast -Wno-varargs -Wstack-protector -fcheck-new -fsized-deallocation \
+        -fstack-protector -fstrict-overflow -flto-odr-type-merging -fno-omit-frame-pointer -Wlarger-than=8192 \
+        -Wstack-usage=8192 -pie -fPIE -Werror=vla \
+        -fsanitize=address,alignment,bool,bounds,enum,float-cast-overflow,float-divide-by-zero,\
+integer-divide-by-zero,leak,nonnull-attribute,null,object-size,return,returns-nonnull-attribute,\
+shift,signed-integer-overflow,undefined,unreachable,vla-bound,vptr"
+    CXXFLAGS_ARCH="-pthread"
+elif [[ "$UNAME_S" == "Darwin" ]]; then
+    CXXFLAGS_OS="-D_DEBUG -ggdb3 -std=c++17 -O0 -Wall -Wextra -Weffc++ -Wc++14-compat -Wmissing-declarations \
+        -Wcast-align -Wcast-qual -Wchar-subscripts -Wconversion -Wctor-dtor-privacy -Wempty-body -Wfloat-equal \
+        -Wformat-nonliteral -Wformat-security -Wformat-signedness -Wformat=2 -Winline -Wnon-virtual-dtor \
+        -Woverloaded-virtual -Wpacked -Wpointer-arith -Winit-self -Wredundant-decls -Wshadow -Wsign-conversion \
+        -Wsign-promo -Wstrict-overflow=2 -Wsuggest-override -Wswitch-default -Wswitch-enum -Wundef \
+        -Wunreachable-code -Wunused -Wvariadic-macros -Wno-missing-field-initializers -Wno-narrowing \
+        -Wno-old-style-cast -Wno-varargs -Wstack-protector -fcheck-new -fsized-deallocation -fstack-protector \
+        -fstrict-overflow -fno-omit-frame-pointer -Wlarger-than=8192 -fPIE -Werror=vla \
+        -fsanitize=address,alignment,bool,bounds,enum,float-cast-overflow,float-divide-by-zero,integer-divide-by-zero,nonnull-attribute,null,return,returns-nonnull-attribute,shift,signed-integer-overflow,undefined,unreachable,vla-bound,vptr"
+    CXXFLAGS_ARCH="-pthread"
+else
+    echo "Unsupported OS: $UNAME_S" >&2
+    exit 1
+fi
+
+# Базовые флаги
+CXXFLAGS="$CXXFLAGS_OS $CXXFLAGS_ARCH"
+
+# Функция: сохранить конфиг
+save_config() {
+    local sources=("$@")
+    > "$CONFIG_FILE"  # очистить файл
+    for src in "${SOURCES[@]}"; do
+        echo "source:$src" >> "$CONFIG_FILE"
+    done
+    for hdr in "${HEADERS[@]}"; do
+        echo "header:$hdr" >> "$CONFIG_FILE"
+    done
+    echo "output:$OUTPUT" >> "$CONFIG_FILE"
+    echo "✅ Configuration saved to $CONFIG_FILE"
+}
+
+# Функция: очистка
+perform_clean() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        # Читаем выходной файл из конфига
+        OUTPUT=$(awk -F: '/^output:/ {print $2}' "$CONFIG_FILE" 2>/dev/null) || OUTPUT="a.out"
+        SOURCES=()
+        while IFS= read -r line; do
+            if [[ "$line" == source:* ]]; then
+                SOURCES+=("${line#source:}")
+            fi
+        done < "$CONFIG_FILE"
+    else
+        OUTPUT="a.out"
+        SOURCES=()
+        # Если нет конфига, попробуем удалить a.out и все .o в текущей директории
+        shopt -s nullglob
+        SOURCES=(*.cpp)
+        shopt -u nullglob
+    fi
+
+    # Удаляем выходной файл
+    if [[ -f "$OUTPUT" ]]; then
+        rm -f "$OUTPUT"
+        echo "🗑️  Removed: $OUTPUT"
+    fi
+
+    # Удаляем .o файлы, соответствующие исходникам
+    for src in "${SOURCES[@]}"; do
+        obj="${src%.cpp}.o"
+        if [[ -f "$obj" ]]; then
+            rm -f "$obj"
+            echo "🗑️  Removed: $obj"
+        fi
+    done
+
+    # Удаляем .dSYM (macOS)
+    if [[ -d "${OUTPUT}.dSYM" ]]; then
+        rm -rf "${OUTPUT}.dSYM"
+        echo "🗑️  Removed: ${OUTPUT}.dSYM"
+    fi
+
+    # Удаляем конфиг
+    if [[ -f "$CONFIG_FILE" ]]; then
+        rm -f "$CONFIG_FILE"
+        echo "🗑️  Removed: $CONFIG_FILE"
+    fi
+
+    echo "🧹 Clean complete."
+    exit 0
+}
+
+# Проверяем, запрошен ли режим очистки
+for arg in "$@"; do
+    if [[ "$arg" == "-c" || "$arg" == "--clean" ]]; then
+        perform_clean
+    fi
+done
+
+# Если запущен без аргументов и есть конфиг — загрузить его
+if [[ $# -eq 0 ]] && [[ -f "$CONFIG_FILE" ]]; then
+    echo "No arguments provided. Loading last configuration from $CONFIG_FILE..."
+    SOURCES=()
+    HEADERS=()
+    OUTPUT="a.out"
+
+    while IFS= read -r line; do
+        if [[ "$line" == source:* ]]; then
+            SOURCES+=("${line#source:}")
+        elif [[ "$line" == header:* ]]; then
+            HEADERS+=("${line#header:}")
+        elif [[ "$line" == output:* ]]; then
+            OUTPUT="${line#output:}"
+        fi
+    done < "$CONFIG_FILE"
+
+    if [[ ${#SOURCES[@]} -eq 0 ]]; then
+        echo "Error: Config file is corrupted or empty." >&2
+        exit 1
+    fi
+else
+    # Обычный парсинг аргументов
+    SOURCES=()
+    HEADERS=()
+    OUTPUT="a.out"
+
+    i=1
+    while [[ $i -le $# ]]; do
+        arg="${!i}"
+        if [[ "$arg" == "-o" ]]; then
+            ((i++))
+            OUTPUT="${!i}"
+        elif [[ "$arg" == *.cpp ]]; then
+            SOURCES+=("$arg")
+        elif [[ "$arg" == *.h ]]; then
+            HEADERS+=("$arg")
+        fi
+        ((i++))
+    done
+
+    # Если не переданы .cpp — попробовать main.cpp
+    if [[ ${#SOURCES[@]} -eq 0 ]]; then
+        if [[ -f "main.cpp" ]]; then
+            SOURCES=("main.cpp")
+            echo "No source files provided. Using main.cpp by default."
+        else
+            echo "Error: No source files provided and main.cpp not found." >&2
+            exit 1
+        fi
+    fi
+
+    # Сохраняем конфиг только если были аргументы (или использовали main.cpp)
+    save_config
+fi
+
+# Добавляем -I директории из header-файлов
+INCLUDE_DIRS=()
+for h in "${HEADERS[@]}"; do
+    dir=$(dirname "$h")
+    if [[ "$dir" != "." ]] && [[ ! " ${INCLUDE_DIRS[@]} " =~ " $dir " ]]; then
+        INCLUDE_DIRS+=("$dir")
+        CXXFLAGS="$CXXFLAGS -I$dir"
+    fi
+done
+
+# Проверяем, что есть что компилировать
+if [[ ${#SOURCES[@]} -eq 0 ]]; then
+    echo "Error: No source files to compile." >&2
+    exit 1
+fi
+
+# Формируем команду
+CMD=("$CXX" ${SOURCES[@]} $CXXFLAGS -o "$OUTPUT")
+
+echo "Compiling: ${SOURCES[*]}"
+echo "Includes : ${INCLUDE_DIRS[*]:-none}"
+echo "Output   : $OUTPUT"
+echo "Command  : ${CMD[*]}"
+
+# Выполняем
+"${CMD[@]}"
+
+# Проверка успешности
+if [[ $? -eq 0 ]]; then
+    echo "✅ Compilation successful: $OUTPUT"
+else
+    echo "❌ Compilation failed."
+    exit 1
+fi

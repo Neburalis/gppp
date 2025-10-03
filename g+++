@@ -105,15 +105,83 @@ perform_clean() {
     exit 0
 }
 
-# Парсинг отчистки (если запрошена отчиста, остальные аргументы не анализируются)
+# Парсинг отчистки (если запрошена отчиста, остальные аргументы не анализируются (exit 0))
 for arg in "$@"; do
     if [[ "$arg" == "-c" || "$arg" == "--clean" ]]; then
         perform_clean
     fi
 done
 
-# Смотри в конфиг если есть и нет аргументов командной строки
-if [[ $# -eq 0 ]] && [[ -f "$CONFIG_FILE" ]]; then
+# Флаг добавления
+ADD_MODE=false
+
+# Проверим, есть ли -a или --add
+for arg in "$@"; do
+    if [[ "$arg" == "-a" || "$arg" == "--add" ]]; then
+        ADD_MODE=true
+        break
+    fi
+done
+
+if [[ "$ADD_MODE" == true ]]; then
+    # Загружаем текущую конфигурацию, если есть
+    if [[ -f "$CONFIG_FILE" ]]; then
+        echo "Loading existing configuration from $CONFIG_FILE for addition..."
+        SOURCES=()
+        HEADERS=()
+        EXTRA_FLAGS=()
+        OUTPUT="a.out"
+
+        while IFS= read -r line; do
+            if [[ "$line" == source:* ]]; then
+                SOURCES+=("${line#source:}")
+            elif [[ "$line" == header:* ]]; then
+                HEADERS+=("${line#header:}")
+            elif [[ "$line" == output:* ]]; then
+                OUTPUT="${line#output:}"
+            elif [[ "$line" == extra_flag:* ]]; then
+                EXTRA_FLAGS+=("${line#extra_flag:}")
+            fi
+        done < "$CONFIG_FILE"
+    else
+        # Если конфига нет — создаем пустой
+        SOURCES=()
+        HEADERS=()
+        EXTRA_FLAGS=()
+        OUTPUT="a.out"
+    fi
+
+    # Теперь парсим аргументы, пропуская -a/--add
+    i=1
+    while [[ $i -le $# ]]; do
+        arg="${!i}"
+        if [[ "$arg" == "-a" || "$arg" == "--add" ]]; then
+            : # пропускаем
+        elif [[ "$arg" == "-o" ]]; then
+            ((i++))
+            OUTPUT="${!i}"
+        elif [[ "$arg" == *.cpp ]]; then
+            # Добавляем только если ещё не в списке
+            if [[ ! " ${SOURCES[*]} " =~ " $arg " ]]; then
+                SOURCES+=("$arg")
+            fi
+        elif [[ "$arg" == *.h ]]; then
+            if [[ ! " ${HEADERS[*]} " =~ " $arg " ]]; then
+                HEADERS+=("$arg")
+            fi
+        else
+            # Добавляем флаг, если его ещё нет
+            if [[ ! " ${EXTRA_FLAGS[*]} " =~ " $arg " ]]; then
+                EXTRA_FLAGS+=("$arg")
+            fi
+        fi
+        ((i++))
+    done
+
+    save_config
+
+elif [[ $# -eq 0 ]] && [[ -f "$CONFIG_FILE" ]]; then
+    # Нет аргументов — просто загружаем конфиг
     echo "No arguments provided. Loading last configuration from $CONFIG_FILE..."
     SOURCES=()
     HEADERS=()
@@ -137,7 +205,7 @@ if [[ $# -eq 0 ]] && [[ -f "$CONFIG_FILE" ]]; then
         exit 1
     fi
 else
-    # Если есть аргументы, то парсим их
+    # Обычный режим: перезапись конфига
     SOURCES=()
     HEADERS=()
     EXTRA_FLAGS=()

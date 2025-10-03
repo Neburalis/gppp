@@ -60,6 +60,10 @@ save_config() {
         echo "header:$hdr" >> "$CONFIG_FILE"
     done
     echo "output:$OUTPUT" >> "$CONFIG_FILE"
+    # Сохраняем EXTRA_FLAGS (по одной записи на строку)
+    for flag in "${EXTRA_FLAGS[@]}"; do
+        echo "extra_flag:$flag" >> "$CONFIG_FILE"
+    done
     echo "Configuration saved to $CONFIG_FILE"
 }
 
@@ -113,6 +117,7 @@ if [[ $# -eq 0 ]] && [[ -f "$CONFIG_FILE" ]]; then
     echo "No arguments provided. Loading last configuration from $CONFIG_FILE..."
     SOURCES=()
     HEADERS=()
+    EXTRA_FLAGS=()
     OUTPUT="a.out"
 
     while IFS= read -r line; do
@@ -122,6 +127,8 @@ if [[ $# -eq 0 ]] && [[ -f "$CONFIG_FILE" ]]; then
             HEADERS+=("${line#header:}")
         elif [[ "$line" == output:* ]]; then
             OUTPUT="${line#output:}"
+        elif [[ "$line" == extra_flag:* ]]; then
+            EXTRA_FLAGS+=("${line#extra_flag:}")
         fi
     done < "$CONFIG_FILE"
 
@@ -133,6 +140,7 @@ else
     # Если есть аргументы, то парсим их
     SOURCES=()
     HEADERS=()
+    EXTRA_FLAGS=()
     OUTPUT="a.out"
 
     i=1
@@ -145,6 +153,8 @@ else
             SOURCES+=("$arg")
         elif [[ "$arg" == *.h ]]; then
             HEADERS+=("$arg")
+        else
+            EXTRA_FLAGS+=("$arg")
         fi
         ((i++))
     done
@@ -170,6 +180,7 @@ for h in "${HEADERS[@]}"; do
     dir=$(dirname "$h")
     if [[ "$dir" != "." ]] && [[ ! " ${INCLUDE_DIRS[@]} " =~ " $dir " ]]; then
         INCLUDE_DIRS+=("$dir")
+        EXTRA_FLAGS+=("-I$dir")
     fi
 done
 
@@ -180,11 +191,12 @@ if [[ ${#SOURCES[@]} -eq 0 ]]; then
 fi
 
 # команда = базовые флаги + extra флаги + исходники + -o
-CMD=("$CXX" ${SOURCES[@]} $CXXFLAGS -o "$OUTPUT")
+CMD=("$CXX" $CXXFLAGS_BASE "${EXTRA_FLAGS[@]}" "${SOURCES[@]}" -o "$OUTPUT")
 
 echo "Compiling: ${SOURCES[*]}"
 echo "Includes : ${INCLUDE_DIRS[*]:-none}"
 echo "Output   : $OUTPUT"
+echo "Extra flags: ${EXTRA_FLAGS[*]:-none}"
 echo "Command  : ${CMD[*]}"
 
 # Запускаем

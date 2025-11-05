@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CONFIG_FILE="./.g+++_config"
+CONFIG_FILE="./.gppp.cfg"
 
 UNAME_S=$(uname -s)
 
@@ -34,7 +34,7 @@ integer-divide-by-zero,leak,nonnull-attribute,null,object-size,return,returns-no
 shift,signed-integer-overflow,undefined,unreachable,vla-bound,vptr"
     CXXFLAGS_ARCH="-pthread"
 elif [[ "$UNAME_S" == "Darwin" ]]; then
-    CXXFLAGS_OS="-D_DEBUG -ggdb3 -std=c++17 -O0 -Wall -Wextra -Weffc++ -Wc++14-compat -Wmissing-declarations \
+    CXXFLAGS_OS="-D_DEBUG -ggdb3 -std=c++17 -O3 -Wall -Wextra -Weffc++ -Wc++14-compat -Wmissing-declarations \
         -Wcast-align -Wcast-qual -Wchar-subscripts -Wconversion -Wctor-dtor-privacy -Wempty-body -Wfloat-equal \
         -Wformat-nonliteral -Wformat-security -Wformat-signedness -Wformat=2 -Winline -Wnon-virtual-dtor \
         -Woverloaded-virtual -Wpacked -Wpointer-arith -Winit-self -Wredundant-decls -Wshadow -Wsign-conversion \
@@ -115,10 +115,21 @@ done
 # Флаг запуска без сохранения конфига
 NO_SAVE=false
 
+# Флаг сухого запуска (только показ команды)
+DRY_RUN=false
+
 # Проверим, есть ли --no-save
 for arg in "$@"; do
     if [[ "$arg" == "--no-save" ]]; then
         NO_SAVE=true
+        break
+    fi
+done
+
+# Проверим, есть ли --dry-run
+for arg in "$@"; do
+    if [[ "$arg" == "--dry-run" ]]; then
+        DRY_RUN=true
         break
     fi
 done
@@ -162,11 +173,11 @@ if [[ "$ADD_MODE" == true ]]; then
         OUTPUT="a.out"
     fi
 
-    # Теперь парсим аргументы, пропуская -a/--add и --no-save
+    # Теперь парсим аргументы, пропуская -a/--add, --no-save и --dry-run
     i=1
     while [[ $i -le $# ]]; do
         arg="${!i}"
-        if [[ "$arg" == "-a" || "$arg" == "--add" || "$arg" == "--no-save" ]]; then
+        if [[ "$arg" == "-a" || "$arg" == "--add" || "$arg" == "--no-save" || "$arg" == "--dry-run" ]]; then
             : # пропускаем
         elif [[ "$arg" == "-o" ]]; then
             ((i++))
@@ -189,7 +200,7 @@ if [[ "$ADD_MODE" == true ]]; then
         ((i++))
     done
 
-    if [[ "$NO_SAVE" == false ]]; then
+    if [[ "$NO_SAVE" == false && "$DRY_RUN" == false ]]; then
         save_config
     fi
 
@@ -227,7 +238,7 @@ else
     i=1
     while [[ $i -le $# ]]; do
         arg="${!i}"
-        if [[ "$arg" == "--no-save" ]]; then
+        if [[ "$arg" == "--no-save" || "$arg" == "--dry-run" ]]; then
             : # пропускаем
         elif [[ "$arg" == "-o" ]]; then
             ((i++))
@@ -254,7 +265,7 @@ else
     fi
 
     # Сохраняем конфиг, потому что он используется для запуска --clean
-    if [[ "$NO_SAVE" == false ]]; then
+    if [[ "$NO_SAVE" == false && "$DRY_RUN" == false ]]; then
         save_config
     fi
 fi
@@ -278,7 +289,16 @@ fi
 # команда = базовые флаги + extra флаги + исходники + -o
 CMD=("$CXX" $CXXFLAGS_BASE "${EXTRA_FLAGS[@]}" "${SOURCES[@]}" -o "$OUTPUT")
 
-if [[ "$NO_SAVE" == true ]]; then
+if [[ "$DRY_RUN" == true ]]; then
+    echo "=== DRY RUN MODE ==="
+    echo "Would compile: ${SOURCES[*]}"
+    echo "Includes     : ${INCLUDE_DIRS[*]:-none}"
+    echo "Output       : $OUTPUT"
+    echo "Extra flags  : ${EXTRA_FLAGS[*]:-none}"
+    echo "Command      : ${CMD[*]}"
+    echo "Note: Configuration not saved, compilation not executed"
+    exit 0
+elif [[ "$NO_SAVE" == true ]]; then
     echo "=== NO-SAVE MODE ==="
     echo "Compiling: ${SOURCES[*]}"
     echo "Includes : ${INCLUDE_DIRS[*]:-none}"
